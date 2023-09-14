@@ -31,6 +31,7 @@ import org.apache.doris.common.util.NetUtils;
 import org.apache.doris.common.util.TimeUtils;
 import org.apache.doris.statistics.query.QueryStatsUtil;
 import org.apache.doris.system.Backend;
+import org.apache.doris.thrift.TTabletReplicaInfo;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -191,6 +192,87 @@ public class TabletsProcDir implements ProcDirInterface {
         }
         return result;
     }
+
+    public List<TTabletReplicaInfo> fetchStructResult() {
+        Preconditions.checkNotNull(table);
+        Preconditions.checkNotNull(index);
+
+        List<TTabletReplicaInfo> tabletInfos = new ArrayList<TTabletReplicaInfo>();
+        table.readLock();
+        try {
+            Map<Long, Long> replicaIdToQueryHits = new HashMap<>();
+            if (Config.enable_query_hit_stats) {
+                List<Long> replicaIds = new ArrayList<Long>();
+                for (Tablet tablet : index.getTablets()) {
+                    for (Replica replica : tablet.getReplicas()) {
+                        replicaIds.add(replica.getId());
+                    }
+                }
+                replicaIdToQueryHits = QueryStatsUtil.getMergedReplicasStats(replicaIds);
+            }
+            // get infos
+            for (Tablet tablet : index.getTablets()) {
+                long tabletId = tablet.getId();
+                if (tablet.getReplicas().size() == 0) {
+                    TTabletReplicaInfo tabletInfo = new TTabletReplicaInfo();
+                    tabletInfo.setTabletId(tabletId);
+                    tabletInfo.setReplicaId(-1);
+                    tabletInfo.setBackendId(-1);
+                    tabletInfo.setSchemaHash(-1);
+                    tabletInfo.setVersion(-1);
+                    tabletInfo.setLastSuccVersion(-1);
+                    tabletInfo.setLastFailVersion(-1);
+                    tabletInfo.setLastFailTime("");
+                    tabletInfo.setLocalDataSize(-1);
+                    tabletInfo.setRemoteDataSize(-1);
+                    tabletInfo.setRowCount(-1);
+                    tabletInfo.setState("");
+                    tabletInfo.setLastConsistencyCheckTime("");
+                    tabletInfo.setCheckVersion(-1);
+                    tabletInfo.setVersionCount(-1);
+                    tabletInfo.setQueryHits(0L);
+                    tabletInfo.setPathHash(-1);
+                    tabletInfo.setCoolDownReplicaid(-1);
+                    tabletInfo.setCoolDownMetaId("");
+
+                    tabletInfos.add(tabletInfo);
+                } else {
+                    for (Replica replica : tablet.getReplicas()) {
+                        TTabletReplicaInfo tabletInfo = new TTabletReplicaInfo();
+                        // tabletId -- replicaId -- backendId -- version -- dataSize -- rowCount -- state
+                        tabletInfo.setTabletId(tabletId);
+                        tabletInfo.setReplicaId(replica.getId());
+                        tabletInfo.setBackendId(replica.getBackendId());
+                        tabletInfo.setSchemaHash(replica.getSchemaHash());
+                        tabletInfo.setVersion(replica.getVersion());
+                        tabletInfo.setLastSuccVersion(replica.getLastSuccessVersion());
+                        tabletInfo.setLastFailVersion(replica.getLastFailedVersion());
+                        tabletInfo.setLastFailTime(TimeUtils.longToTimeString(replica.getLastFailedTimestamp()));
+                        tabletInfo.setLocalDataSize(replica.getDataSize());
+                        tabletInfo.setRemoteDataSize(replica.getRemoteDataSize());
+                        tabletInfo.setRowCount(replica.getRowCount());
+                        tabletInfo.setState(replica.getState().toString());
+                        tabletInfo.setLastConsistencyCheckTime(TimeUtils.longToTimeString(tablet.getLastCheckTime()));
+                        tabletInfo.setCheckVersion(tablet.getCheckedVersion());
+                        tabletInfo.setVersionCount(replica.getVersionCount());
+                        tabletInfo.setQueryHits(replicaIdToQueryHits.getOrDefault(replica.getId(), 0L));
+                        tabletInfo.setPathHash(replica.getPathHash());
+                        tabletInfo.setCoolDownReplicaid(tablet.getCooldownConf().first);
+                        if (replica.getCooldownMetaId() == null) {
+                            tabletInfo.setCoolDownMetaId("");
+                        } else {
+                            tabletInfo.setCoolDownMetaId(replica.getCooldownMetaId().toString());
+                        }
+                        tabletInfos.add(tabletInfo);
+                    }
+                }
+            }
+        } finally {
+            table.readUnlock();
+        }
+        return tabletInfos;
+    }
+
 
     @Override
     public boolean register(String name, ProcNodeInterface node) {

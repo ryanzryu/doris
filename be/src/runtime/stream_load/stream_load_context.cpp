@@ -102,6 +102,10 @@ std::string StreamLoadContext::to_json() const {
     writer.Int(write_data_cost_nanos / 1000000);
     writer.Key("CommitAndPublishTimeMs");
     writer.Int64(commit_and_publish_txn_cost_nanos / 1000000);
+    writer.Key("TableMaxTabletVersionCount");
+    writer.Int64(table_current_max_tablet_version_num);
+    writer.Key("ConfMaxTabletVersionNum");
+    writer.Int64(conf_max_tablet_version_num);
 
     if (!error_url.empty()) {
         writer.Key("ErrorURL");

@@ -38,7 +38,10 @@ import org.apache.doris.catalog.Database;
 import org.apache.doris.catalog.DatabaseIf;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.Index;
+import org.apache.doris.catalog.MaterializedIndex;
+import org.apache.doris.catalog.MaterializedIndex.IndexExtState;
 import org.apache.doris.catalog.OlapTable;
+import org.apache.doris.catalog.Partition;
 import org.apache.doris.catalog.Replica;
 import org.apache.doris.catalog.Table;
 import org.apache.doris.catalog.TableIf;
@@ -62,6 +65,7 @@ import org.apache.doris.common.ThriftServerEventProcessor;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.Version;
 import org.apache.doris.common.annotation.LogException;
+import org.apache.doris.common.proc.TabletsProcDir;
 import org.apache.doris.common.util.DebugUtil;
 import org.apache.doris.common.util.SqlParserUtils;
 import org.apache.doris.common.util.Util;
@@ -138,6 +142,8 @@ import org.apache.doris.thrift.TGetMasterTokenResult;
 import org.apache.doris.thrift.TGetQueryStatsRequest;
 import org.apache.doris.thrift.TGetSnapshotRequest;
 import org.apache.doris.thrift.TGetSnapshotResult;
+import org.apache.doris.thrift.TGetTableAllTabletInfoRequest;
+import org.apache.doris.thrift.TGetTableAllTabletInfoResult;
 import org.apache.doris.thrift.TGetTablesParams;
 import org.apache.doris.thrift.TGetTablesResult;
 import org.apache.doris.thrift.TGetTabletReplicaInfosRequest;
@@ -189,6 +195,7 @@ import org.apache.doris.thrift.TStreamLoadWithLoadStatusResult;
 import org.apache.doris.thrift.TTableIndexQueryStats;
 import org.apache.doris.thrift.TTableQueryStats;
 import org.apache.doris.thrift.TTableStatus;
+import org.apache.doris.thrift.TTabletReplicaInfo;
 import org.apache.doris.thrift.TUniqueId;
 import org.apache.doris.thrift.TUpdateExportTaskStatusRequest;
 import org.apache.doris.thrift.TUpdateFollowerStatsCacheRequest;
@@ -216,6 +223,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -2953,5 +2961,30 @@ public class FrontendServiceImpl implements FrontendService.Iface {
         }
         // Return Ok anyway
         return new TStatus(TStatusCode.OK);
+    }
+
+    public TGetTableAllTabletInfoResult getTableAllTabletInfo(TGetTableAllTabletInfoRequest request)
+            throws TException {
+        TGetTableAllTabletInfoResult result = new TGetTableAllTabletInfoResult();
+        try {
+            Env env = Env.getCurrentEnv();
+            String fullDbName = ClusterNamespace.getFullName(SystemInfoService.DEFAULT_CLUSTER, request.getDbName());
+            Database db = env.getInternalCatalog().getDbOrAnalysisException(fullDbName);
+            OlapTable olapTable = db.getOlapTableOrAnalysisException(request.getTableName());
+            List<TTabletReplicaInfo> tabletInfoList = new ArrayList<TTabletReplicaInfo>();
+            Collection<Partition> partitions = new ArrayList<Partition>();
+            partitions = olapTable.getPartitions();
+            for (Partition partition : partitions) {
+                for (MaterializedIndex index : partition.getMaterializedIndices(IndexExtState.ALL)) {
+                    TabletsProcDir procDir = new TabletsProcDir(olapTable, index);
+                    tabletInfoList.addAll(procDir.fetchStructResult());
+                }
+            }
+            result.setTablets(tabletInfoList);
+        } catch (Exception e) {
+            throw new TException("failed to get tabletinfo from "
+                    + request.getDbName() + "." + request.getTableName() + ":" + e.getMessage());
+        }
+        return result;
     }
 }

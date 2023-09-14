@@ -43,6 +43,7 @@
 #include "common/logging.h"
 #include "common/status.h"
 #include "common/utils.h"
+#include "exec/schema_scanner/schema_helper.h"
 #include "http/http_channel.h"
 #include "http/http_common.h"
 #include "http/http_headers.h"
@@ -118,6 +119,8 @@ void StreamLoadAction::handle(HttpRequest* req) {
         }
     }
 
+    _set_tablet_version_count_to_ctx(req,ctx);
+
     auto str = ctx->to_json();
     // add new line at end
     str = str + '\n';
@@ -133,6 +136,8 @@ void StreamLoadAction::handle(HttpRequest* req) {
     streaming_load_duration_ms->increment(ctx->load_cost_millis);
     streaming_load_current_processing->increment(-1);
 }
+
+
 
 Status StreamLoadAction::_handle(std::shared_ptr<StreamLoadContext> ctx) {
     if (ctx->body_bytes > 0 && ctx->receive_bytes != ctx->body_bytes) {
@@ -611,6 +616,34 @@ void StreamLoadAction::_save_stream_load_record(std::shared_ptr<StreamLoadContex
     } else {
         LOG(WARNING) << "put stream_load_record rocksdb failed. stream_load_recorder is null.";
     }
+}
+
+void StreamLoadAction::_set_tablet_version_count_to_ctx(HttpRequest* http_req,
+                                      std::shared_ptr<StreamLoadContext> ctx) {
+    TNetworkAddress master_addr = _exec_env->master_info()->network_address;
+    TGetTableAllTabletInfoRequest request;
+    request.db_name = http_req->param(HTTP_DB_KEY);
+    request.table_name = http_req->param(HTTP_TABLE_KEY);
+
+    TGetTableAllTabletInfoResult result;
+    int max_tablet_count = -1;
+
+    Status status = SchemaHelper::get_table_all_tablet_info( master_addr.hostname, master_addr.port, request, &result);
+    // get the max version count of all this table's tablet
+    if (!status.ok()) {
+        ctx->table_current_max_tablet_version_num = max_tablet_count;
+    } else {
+        std::vector<TTabletReplicaInfo>::iterator it = result.tablets.begin();
+        for(;it != result.tablets.end(); ++it) {
+            if(it->version_count > max_tablet_count) {
+                max_tablet_count = it->version_count;
+            }
+        }
+        ctx->table_current_max_tablet_version_num = max_tablet_count;
+    }
+    // get the max tablet version number of cluster configuration
+    ctx->conf_max_tablet_version_num = config::max_tablet_version_num;
+    return;
 }
 
 } // namespace doris
