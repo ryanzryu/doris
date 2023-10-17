@@ -1112,6 +1112,8 @@ DEFINE_Bool(enable_cpu_hard_limit, "false");
 
 DEFINE_Bool(ignore_always_true_predicate_for_segment, "true");
 
+DEFINE_Int32(be_thrift_max_pkg_size, "20000000");
+
 // clang-format off
 #ifdef BE_TEST
 // test s3

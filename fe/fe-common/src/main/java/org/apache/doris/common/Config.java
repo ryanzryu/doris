@@ -2247,4 +2247,9 @@ public class Config extends ConfigBase {
     })
     public static String access_control_allowed_origin_domain = "*";
 
+    @ConfField(description = {
+            "限制fe节点thrift server可以接收的最大包大小,默认20M,设置为-1表示不限制",
+            "the max package size fe thrift server can receive,avoid accepting error"
+            + "or too large package causing OOM,default 20M,set -1 for unlimited. "})
+    public static int fe_thrift_max_pkg_size = 20000000;
 }

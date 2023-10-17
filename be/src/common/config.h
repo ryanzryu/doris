@@ -1182,6 +1182,10 @@ DECLARE_Bool(enable_cpu_hard_limit);
 // Remove predicate that is always true for a segment.
 DECLARE_Bool(ignore_always_true_predicate_for_segment);
 
+// the max package size be thrift server can receive,avoid accepting error or too large package causing OOM,
+// default 20M, set be_thrift_max_pkg_size 0 for unlimited
+DECLARE_Int32(be_thrift_max_pkg_size);
+
 #ifdef BE_TEST
 // test s3
 DECLARE_String(test_s3_resource);
